@@ -4,11 +4,13 @@
 void MultiTimer::markExpired()
 {
 	const TimeReference now = Clock::now();
-	for (auto iterator = timers.begin();
-		iterator != timers.end() && std::get<0>(*iterator) <= now;
-		++iterator)
+	auto iterator = timers.begin();
+	while (iterator != timers.end() && std::get<0>(*iterator) <= now)
 	{
-		std::get<1>(*iterator) = true;
+		auto expired = iterator++;
+		std::get<0>(*expired) = TimeReference::max();
+		std::get<1>(*expired) = true;
+		timers.splice(timers.end(), timers, expired);
 	}
 }
 
@@ -92,6 +94,7 @@ MultiTimer::~MultiTimer()
 {
 	{
 		std::lock_guard<std::mutex> lock(mutex);
+		timers.clear();
 		condition.notify_all();
 	}
 

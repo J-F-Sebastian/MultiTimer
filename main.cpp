@@ -49,9 +49,9 @@ int main()
 
 	std::this_thread::sleep_for(std::chrono::seconds(5));
 
-	for (MultiTimer::TimerEntry* entry : timers)
+	for (auto iterator = timers.begin(); iterator != timers.end() - 1; ++iterator)
 	{
-		if (!timer.removeTimer(entry)) 
+		if (!timer.removeTimer(*iterator)) 
 		{
 			std::cout << "Timer not present" << std::endl;
 		}
