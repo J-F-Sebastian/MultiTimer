@@ -37,7 +37,7 @@ int main()
 
 	for (int index = 0; index < 5; ++index)
 	{
-		timers.push_back(timer.addTimer(std::chrono::seconds(distribution(generator))));
+		timers.push_back(timer.createTimerEntry(std::chrono::seconds(distribution(generator))));
 	}
 
 	std::this_thread::sleep_for(std::chrono::seconds(3));
@@ -51,7 +51,7 @@ int main()
 
 	for (auto iterator = timers.begin(); iterator != timers.end() - 1; ++iterator)
 	{
-		if (!timer.removeTimer(*iterator)) 
+		if (!timer.removeTimerEntry(*iterator))
 		{
 			std::cout << "Timer not present" << std::endl;
 		}
@@ -59,6 +59,11 @@ int main()
 		{
 			std::cout << "Timer removed" << std::endl;
 		}
+	}
+
+	for (MultiTimer::TimerEntry* entry : timers)
+	{
+		delete entry;
 	}
 
 	return 0;

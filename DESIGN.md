@@ -41,41 +41,41 @@ that the worker's empty-list loop condition causes it to exit before `join()` co
    entries contain `TimeReference::max()`.
 2. The second element indicates whether the timer has expired.
 
-The pointer returned by `addTimer` identifies the list object itself. The pointer remains stable
-while the entry is in the `std::list`, including when the entry is reordered with `splice`. It
-becomes invalid after `removeTimer` succeeds.
+`createTimerEntry` returns a pointer to a heap-allocated entry initialized with
+`TimeReference::max()` and an expired flag of `true`. It does not insert the entry into `timers`.
+The caller owns the entry and must delete it when it is no longer needed. The timer list stores
+pointers to these separately allocated entries.
 
 ### 2.3 Timer list
 
-`TimerList` is an alias for `std::list<TimerEntry>`. A linked list is used because:
+`TimerList` is an alias for `std::list<TimerEntry*>`. A linked list is used because:
 
-- insertion does not invalidate pointers to existing entries;
+- insertion and reordering do not invalidate pointers to entries;
 - erasing a matching entry is constant-time once its iterator is known;
-- `splice` can move an existing entry to a new sorted position without reallocating it.
+- `splice` can move an existing pointer to a new sorted position without reallocating it.
 
-New entries are inserted before the first entry with a later expiration. Equal expiration times
-retain insertion order. Active entries remain at the front of the list, while expired entries are
-moved to the back.
+Registered entries are inserted before the first entry with a later expiration. Equal expiration
+times retain insertion order. The list contains registered timers until they are removed or expire.
 
 ### 2.4 Scheduling algorithms
 
-`addTimer` walks the sorted list, inserts the new entry at its ordered position, and refreshes
-`timepoint`.
+`createTimerEntry` only allocates an expired, detached entry. It does not add an entry to the list
+or affect the schedule.
 
-`removeTimer` searches for an entry by comparing the supplied pointer with the address of each list
-element. If found, it erases that element and refreshes the schedule.
+`removeTimerEntry` searches for the supplied pointer in the list. If found, it marks the entry
+expired, removes it from the schedule, and refreshes the next expiration. It does not delete the
+entry; ownership remains with the caller.
 
-`updateTimer` finds the existing entry by pointer, calculates a new expiration, resets its expired
-flag, and uses `std::list::splice` to move the entry to its new sorted position. This preserves the
-caller's pointer.
+`updateTimer` calculates a new expiration and clears the expired flag. If the entry is expired, it
+is treated as detached and inserted at its sorted position. Otherwise, it is found in the list and
+spliced to its new sorted position. Both cases preserve the caller's pointer.
 
-`markExpired` starts at the front of the sorted list and processes every entry whose expiration is
-at or before the current time. For each expired entry it sets the expiration to
-`TimeReference::max()`, sets the expired flag to `true`, and splices the node to the end of the
-list. Because the list is sorted, the remaining active entries stay at the front.
+`markExpired` starts at the front of the sorted list and marks then removes every entry whose
+expiration is at or before the current time. Because the list is sorted, the remaining timers stay
+in expiration order. Expired entries remain allocated and can be scheduled again with `updateTimer`.
 
-`refreshDelay` skips leading entries already marked expired and assigns `timepoint` from the first
-remaining active entry. If all entries are expired, it assigns `TimeReference::max()`.
+`refreshDelay` assigns `timepoint` from the first scheduled entry. If no timers remain, it assigns
+`TimeReference::max()`.
 
 ### 2.5 Thread synchronization
 
@@ -137,16 +137,17 @@ timer.init();
 Starts the worker thread. If a worker already exists, `init` joins and replaces it before starting a
 new one.
 
-#### `addTimer`
+#### `createTimerEntry`
 
 ```cpp
 MultiTimer::TimerEntry* entry =
-    timer.addTimer(std::chrono::seconds(5));
+    timer.createTimerEntry(std::chrono::seconds(5));
 ```
 
-Creates a timer that expires after the supplied duration, inserts it in ascending expiration order,
-wakes the worker, and returns a pointer to the stored entry. Keep the pointer when the timer must
-later be updated or removed.
+Allocates and returns a detached entry initialized with `TimeReference::max()` and an expired flag
+of `true`. The duration parameter is retained by the API but does not affect this initial state.
+This method does not register or schedule the entry. The caller owns the returned pointer and must
+`delete` it when no longer needed.
 
 #### `updateTimer`
 
@@ -154,24 +155,24 @@ later be updated or removed.
 bool updated = timer.updateTimer(entry, std::chrono::seconds(10));
 ```
 
-Finds the entry identified by `entry`, assigns a new expiration based on the current time and
-`duration`, clears its expired flag, and reorders it. It returns `true` when the entry was found and
-`false` otherwise. A successful update preserves the `TimerEntry*`.
+Assigns a new expiration based on the current time and `duration` and clears the expired flag. An
+expired entry is treated as detached and inserted into the sorted list; a non-expired entry is
+reordered in place. It returns `true` when updated and `false` if a non-expired entry is not in the
+list. The `TimerEntry*` remains valid.
 
-#### `removeTimer`
+#### `removeTimerEntry`
 
 ```cpp
-bool removed = timer.removeTimer(entry);
+bool removed = timer.removeTimerEntry(entry);
 ```
 
-Searches for the entry identified by `entry`, removes it, and wakes the worker. It returns `true`
-when the entry was found and removed, or `false` when no matching entry exists. Do not use a pointer
-after `removeTimer` returns `true`.
+Searches for the entry identified by `entry`, marks it expired, removes it from the schedule, and
+wakes the worker. It returns `true` when the entry was scheduled and removed, or `false` when no
+matching entry exists. The entry remains allocated and owned by the caller.
 
 #### Destructor
 
 The destructor stops normal object use and joins the owned worker thread before the object is
-destroyed. It clears any remaining timer entries while holding the mutex and notifies the worker, so
-callers may leave timers in the list when the object is destroyed. Any `TimerEntry*` retained by the
-caller becomes invalid once the corresponding entry is removed or the owning `MultiTimer` is
-destroyed.
+destroyed. It clears the scheduled timer pointers while holding the mutex and notifies the worker.
+The caller retains ownership of each `TimerEntry*` and must delete entries when they are no longer
+needed, including after the `MultiTimer` is destroyed.

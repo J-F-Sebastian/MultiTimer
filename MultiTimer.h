@@ -14,7 +14,7 @@ public:
 	using Clock = std::chrono::steady_clock;
 	using TimeReference = Clock::time_point;
 	using TimerEntry = std::tuple<TimeReference, bool>;
-	using TimerList = std::list<TimerEntry>;
+	using TimerList = std::list<TimerEntry*>;
 
 	/** Destroys the timer and waits for its worker thread to finish. */
 	~MultiTimer();
@@ -32,21 +32,22 @@ public:
 	MultiTimer& operator=(MultiTimer&&) = delete;
 
 	/**
-	 * Adds a timer with the specified duration.
-	 * @param duration The duration until the timer expires.
-	 * @return A pointer to the inserted timer entry.
+	 * Creates a detached timer entry.
+	 * @param duration The duration parameter (not used to initialize the entry).
+	 * @return A pointer to a heap-allocated entry initialized as expired with no expiration time.
+	 * The caller owns the returned entry and must delete it.
 	 */
-	TimerEntry* addTimer(const Clock::duration& duration);
+	TimerEntry* createTimerEntry(const Clock::duration& duration);
 
 	/**
-	 * Removes a timer identified by its entry pointer.
+	 * Removes a timer entry from the schedule.
 	 * @param timer A pointer to the timer entry to remove.
-	 * @return True if the timer was found and removed, otherwise false.
+	 * @return True if the timer was scheduled and removed, otherwise false.
 	 */
-	bool removeTimer(TimerEntry* timer);
+	bool removeTimerEntry(TimerEntry* timer);
 
 	/**
-	 * Updates and reorders a timer identified by its entry pointer.
+	 * Updates a timer entry, inserting it if it is detached and expired.
 	 * @param timer A pointer to the timer entry to update.
 	 * @param duration The duration until the timer expires again.
 	 * @return True if the timer was found and updated, otherwise false.
@@ -67,7 +68,7 @@ private:
 	std::mutex mutex;
 	std::thread* thread = nullptr;
 
-	/** Marks all timers whose expiration time has passed as expired. */
+	/** Marks expired entries and removes them from the scheduled timer list. */
 	void markExpired();
 
 	/** Updates the next expiration time used by the worker thread. */

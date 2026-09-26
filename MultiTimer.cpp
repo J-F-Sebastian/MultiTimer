@@ -5,52 +5,47 @@ void MultiTimer::markExpired()
 {
 	const TimeReference now = Clock::now();
 	auto iterator = timers.begin();
-	while (iterator != timers.end() && std::get<0>(*iterator) <= now)
+	while (iterator != timers.end() && std::get<0>(**iterator) <= now)
 	{
-		auto expired = iterator++;
-		std::get<0>(*expired) = TimeReference::max();
-		std::get<1>(*expired) = true;
-		timers.splice(timers.end(), timers, expired);
+		std::get<0>(**iterator) = TimeReference::max();
+		std::get<1>(**iterator) = true;
+		iterator = timers.erase(iterator);
 	}
 }
 
 void MultiTimer::refreshDelay()
 {
 	auto iterator = timers.begin();
-	while (iterator != timers.end() && std::get<1>(*iterator))
+	while (iterator != timers.end() && std::get<1>(**iterator))
 	{
 		++iterator;
 	}
 
 	timepoint = (iterator == timers.end())
 		? TimeReference::max()
-		: std::get<0>(*iterator);
+		: std::get<0>(**iterator);
 }
 
-MultiTimer::TimerEntry* MultiTimer::addTimer(const Clock::duration &duration)
+MultiTimer::TimerEntry* MultiTimer::createTimerEntry(const Clock::duration&)
 {
-	std::lock_guard<std::mutex> lock(mutex);
-	const TimeReference expiration = Clock::now() + duration;
-	auto iterator = timers.begin();
-	while (iterator != timers.end() && std::get<0>(*iterator) <= expiration)
+	return new TimerEntry(TimeReference::max(), true);
+}
+
+bool MultiTimer::removeTimerEntry(TimerEntry* timer)
+{
+	if (timer == nullptr)
 	{
-		++iterator;
+		return false;
 	}
 
-	TimerEntry* timer = &*timers.emplace(iterator, expiration, false);
-	refreshDelay();
-	condition.notify_all();
-	return timer;
-}
-
-bool MultiTimer::removeTimer(TimerEntry* timer)
-{
 	std::lock_guard<std::mutex> lock(mutex);
 
 	for (auto iterator = timers.begin(); iterator != timers.end(); ++iterator)
 	{
-		if (&*iterator == timer)
+		if (*iterator == timer)
 		{
+			std::get<0>(*timer) = TimeReference::max();
+			std::get<1>(*timer) = true;
 			timers.erase(iterator);
 			refreshDelay();
 			condition.notify_all();
@@ -63,31 +58,52 @@ bool MultiTimer::removeTimer(TimerEntry* timer)
 
 bool MultiTimer::updateTimer(TimerEntry* timer, const Clock::duration &duration)
 {
-	std::lock_guard<std::mutex> lock(mutex);
-
-	for (auto iterator = timers.begin(); iterator != timers.end(); ++iterator)
+	if (timer == nullptr)
 	{
-		if (&*iterator == timer)
+		return false;
+	}
+
+	std::lock_guard<std::mutex> lock(mutex);
+	const bool isDetached = std::get<1>(*timer);
+	const TimeReference expiration = Clock::now() + duration;
+	auto iterator = timers.end();
+
+	if (!isDetached)
+	{
+		iterator = timers.begin();
+		while (iterator != timers.end() && *iterator != timer)
 		{
-			const TimeReference expiration = Clock::now() + duration;
-			std::get<0>(*iterator) = expiration;
-			std::get<1>(*iterator) = false;
+			++iterator;
+		}
 
-			auto position = timers.begin();
-			while (position != timers.end() &&
-				(position == iterator || std::get<0>(*position) <= expiration))
-			{
-				++position;
-			}
-
-			timers.splice(position, timers, iterator);
-			refreshDelay();
-			condition.notify_all();
-			return true;
+		if (iterator == timers.end())
+		{
+			return false;
 		}
 	}
 
-	return false;
+	std::get<0>(*timer) = expiration;
+	std::get<1>(*timer) = false;
+
+	auto position = timers.begin();
+	while (position != timers.end() &&
+		(position == iterator || std::get<0>(**position) <= expiration))
+	{
+		++position;
+	}
+
+	if (isDetached)
+	{
+		timers.insert(position, timer);
+	}
+	else
+	{
+		timers.splice(position, timers, iterator);
+	}
+
+	refreshDelay();
+	condition.notify_all();
+	return true;
 }
 
 MultiTimer::~MultiTimer()
@@ -121,7 +137,7 @@ void MultiTimer::init()
 		std::unique_lock<std::mutex> lock(mutex);
 		do
 		{
-			std::cout << "MultiTimer thread : " << timepoint.time_since_epoch().count() << std::endl;
+			//std::cout << "MultiTimer thread : " << timepoint.time_since_epoch().count() << std::endl;
 			condition.wait_until(lock, timepoint);
 			markExpired();
 			refreshDelay();
