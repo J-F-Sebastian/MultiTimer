@@ -24,6 +24,9 @@ add_executable(MultiTimerTest
     main.cpp
 )
 
+enable_testing()
+add_test(NAME MultiTimerTest COMMAND MultiTimerTest)
+
 target_link_libraries(MultiTimerTest PRIVATE MultiTimer)
 target_compile_features(MultiTimerTest PRIVATE cxx_std_14)
 
