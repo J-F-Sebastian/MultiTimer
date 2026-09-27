@@ -41,17 +41,15 @@ bool MultiTimer::removeTimerEntry(TimerEntry* timer)
 
 	std::lock_guard<std::mutex> lock(mutex);
 
-	for (auto iterator = timers.begin(); iterator != timers.end(); ++iterator)
+	auto iterator = timers.find(timer);
+	if (iterator != timers.end())
 	{
-		if (*iterator == timer)
-		{
-			timers.erase(iterator);
-			std::get<0>(*timer) = TimeReference::max();
-			std::get<1>(*timer) = true;
-			refreshDelay();
-			condition.notify_all();
-			return true;
-		}
+		timers.erase(iterator);
+		std::get<0>(*timer) = TimeReference::max();
+		std::get<1>(*timer) = true;
+		refreshDelay();
+		condition.notify_all();
+		return true;
 	}
 
 	return false;
@@ -70,11 +68,7 @@ bool MultiTimer::updateTimer(TimerEntry* timer, const Clock::duration &duration)
 
 	if (!isDetached)
 	{
-		auto iterator = timers.begin();
-		while (iterator != timers.end() && *iterator != timer)
-		{
-			++iterator;
-		}
+		auto iterator = timers.find(timer);
 
 		if (iterator == timers.end())
 		{
