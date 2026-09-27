@@ -87,6 +87,17 @@ bool MultiTimer::updateTimer(TimerEntry* timer, const Clock::duration &duration)
 	return true;
 }
 
+bool MultiTimer::isTimerExpired(TimerEntry* timer)
+{
+	if (timer == nullptr)
+	{
+		return false;
+	}
+
+	std::lock_guard<std::mutex> lock(mutex);
+	return std::get<1>(*timer);
+}
+
 MultiTimer::~MultiTimer()
 {
 	{

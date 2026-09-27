@@ -63,6 +63,13 @@ public:
 	 */
 	bool updateTimer(TimerEntry* timer, const Clock::duration& duration);
 
+	/**
+	 * Checks whether a timer entry is detached or has expired.
+	 * @param timer A pointer to the timer entry to check.
+	 * @return True if the timer is detached or has expired, otherwise false.
+	 */
+	bool isTimerExpired(TimerEntry* timer);
+
 	/** Starts the timer worker thread. */
 	void init();
 
