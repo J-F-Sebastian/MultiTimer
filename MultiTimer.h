@@ -3,8 +3,8 @@
 
 #include <chrono>
 #include <condition_variable>
-#include <list>
 #include <mutex>
+#include <set>
 #include <thread>
 #include <tuple>
 
@@ -14,7 +14,16 @@ public:
 	using Clock = std::chrono::steady_clock;
 	using TimeReference = Clock::time_point;
 	using TimerEntry = std::tuple<TimeReference, bool>;
-	using TimerList = std::list<TimerEntry*>;
+	struct TimerEntryCompare
+	{
+		bool operator()(const TimerEntry* left, const TimerEntry* right) const
+		{
+			const TimeReference& leftExpiration = std::get<0>(*left);
+			const TimeReference& rightExpiration = std::get<0>(*right);
+			return leftExpiration < rightExpiration;
+		}
+	};
+	using TimerMultiSet = std::multiset<TimerEntry*, TimerEntryCompare>;
 
 	/** Destroys the timer and waits for its worker thread to finish. */
 	~MultiTimer();
@@ -62,13 +71,13 @@ protected:
 	MultiTimer() = default;
 
 private:
-	TimerList timers;
+	TimerMultiSet timers;
 	TimeReference timepoint = TimeReference::max();
 	std::condition_variable condition;
 	std::mutex mutex;
 	std::thread* thread = nullptr;
 
-	/** Marks expired entries and removes them from the scheduled timer list. */
+	/** Marks expired entries and removes them from the scheduled timer multiset. */
 	void markExpired();
 
 	/** Updates the next expiration time used by the worker thread. */
